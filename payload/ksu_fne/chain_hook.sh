@@ -106,10 +106,22 @@ if [ -z "$R" ] || [ "$R" = "0000000000000000" ]; then
   fi
   echo "!! ALLOW_UNVERIFIED=1 —— 强行继续（风险自负）"
 elif [ "$R" != "$F" ]; then
-  # 走到这里说明 fake 表与运行内核的 slide 不一致。此时 root 已经到手、
-  # FIFO 通道已经建立，所以这里直接放弃自动 insmod，把设备留在
-  # Permissive + root 通道可用的状态，交给上层脚本用官方 ksud insmod 接手。
-  echo "!! slide mismatch: real commit_creds=$R fake=$F - aborting"
+  # slide mismatch: fake 表与运行内核不一致。改用 ksud insmod（运行时符号解析），
+  # 成功后恢复 Enforcing，不再依赖外部通道。
+  echo "!! slide mismatch: real commit_creds=$R fake=$F - falling back to ksud insmod"
+  echo 0 > /proc/sys/kernel/kptr_restrict 2>/dev/null
+  echo 0 > /proc/sys/kernel/panic_on_oops 2>/dev/null
+  $D/ksud insmod $D/kernelsu.ko "allow_shell=1 pristine_policy=$D/pristine_policy" >> $L 2>&1
+  echo "ksud insmod rc=$?"
+  sleep 2
+  if grep -q kernelsu /proc/modules 2>/dev/null; then
+    echo "--- KernelSU loaded via ksud ---"
+    grep kernelsu /proc/modules
+    echo ok > $ST
+    echo 1 > /sys/fs/selinux/enforce 2>/dev/null
+    exit 0
+  fi
+  echo "!! ksud insmod failed - keeping permissive, channel available"
   echo "$kr" > /proc/sys/kernel/kptr_restrict 2>/dev/null
   echo "$po" > /proc/sys/kernel/panic_on_oops 2>/dev/null
   echo slidemismatch > $ST

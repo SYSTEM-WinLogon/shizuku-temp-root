@@ -344,13 +344,13 @@ public class MainActivity extends Activity {
     for (int i = 0; i < 300 && !dead; i++) {
       try {
         Thread.sleep(2000);
-        String s = run("cat " + D + "/app_root.log 2>/dev/null | tail -n 4; echo '###'; "
-            + "cat /data/local/tmp/rs.out 2>/dev/null | tail -n 2; echo '###'; "
-            + "cat " + D + "/chain_status 2>/dev/null", 15);
+        String s = run("cat " + D + "/app_root.log 2>/dev/null | tail -n 3; echo '###'; "
+            + "cat " + D + "/chain_status 2>/dev/null; echo '###'; "
+            + "grep kernelsu /proc/modules 2>/dev/null | head -1", 15);
         setState(s.isEmpty() ? "等待设备端输出…" : s);
-        if (s.contains("ROOT SHELL CHANNEL UP")) {
+        if (s.contains("kernelsu") || s.contains("KernelSU loaded") || s.contains("ROOT SHELL CHANNEL UP")) {
           append(s);
-          setState("Root 通道已建立，正在加载 KernelSU…");
+          setState("Root 就绪，正在收尾…");
           loadKsu();
           return;
         }
@@ -372,7 +372,8 @@ public class MainActivity extends Activity {
           + "echo '--- 进程 ---'; ps -A -o PID,NAME 2>/dev/null | grep -E 'fne|rs.in' | grep -v grep || echo 无; "
           + "echo '--- 通道 ---'; cat /data/local/tmp/rs.out 2>/dev/null | tail -n 3 || echo 无; "
           + "echo '--- 流程日志 ---'; cat " + D + "/app_root.log 2>/dev/null | tail -n 6; "
-          + "echo '--- SELinux ---'; getenforce", 20);
+          + "echo '--- SELinux ---'; getenforce; "
+          + "echo '--- su ---'; ls -l /system/bin/su 2>/dev/null || echo 无; /system/bin/su -c id 2>&1 | head -1", 20);
       setState(s);
       append(s);
     } catch (Exception e) {
@@ -382,31 +383,33 @@ public class MainActivity extends Activity {
 
   private void loadKsu() {
     try {
-      setState("正在通过 root 通道加载 KernelSU（ksud insmod）…");
-      String b64 = Base64.encodeToString("sh /data/local/tmp/ksu_fne/ksu_lateload.sh".getBytes("UTF-8"), Base64.NO_WRAP);
-      run("timeout 10 sh -c 'printf %s " + b64 + " | base64 -d > /data/local/tmp/rs.in'", 20);
-      String out = "";
-      for (int i = 0; i < 40 && !dead; i++) {
-        Thread.sleep(2000);
-        out = run("tail -n 30 /data/local/tmp/rs.out 2>/dev/null", 15);
-        if (out.contains("KSUTRY_DONE")) break;
-        String tail = out.length() > 200 ? out.substring(out.length() - 200) : out;
-        setState("等待 KernelSU 加载…\n" + tail);
-      }
-      append(out);
-      if (!out.contains("KSUTRY_DONE")) {
-        setState("KernelSU 加载未确认，请用「执行命令」检查 rs.out。");
-        return;
-      }
+      // 新版 chain_hook 在 slide mismatch 时会自己 ksud insmod；旧流程则通过通道补
       String mod = run("grep kernelsu /proc/modules 2>/dev/null || echo no-ksu", 15);
       if (mod.contains("no-ksu")) {
-        setState("ksud 已执行但模块未加载：\n" + mod);
+        setState("模块未加载，正在通过 root 通道加载 KernelSU…");
+        String b64 = Base64.encodeToString("sh /data/local/tmp/ksu_fne/ksu_lateload.sh".getBytes("UTF-8"), Base64.NO_WRAP);
+        run("timeout 10 sh -c 'printf %s " + b64 + " | base64 -d > /data/local/tmp/rs.in'", 20);
+        for (int i = 0; i < 30 && !dead; i++) {
+          Thread.sleep(2000);
+          mod = run("grep kernelsu /proc/modules 2>/dev/null || echo no-ksu", 15);
+          if (!mod.contains("no-ksu")) break;
+          setState("等待 KernelSU 模块加载…");
+        }
+      }
+      if (mod.contains("no-ksu")) {
+        setState("KernelSU 模块未加载成功。请点「检查状态」查看日志。");
         return;
       }
       append(mod);
-      setState("KernelSU 已加载，正在恢复 SELinux…");
-      runRootCmd("echo 1 > /sys/fs/selinux/enforce; getenforce");
-      setState("完成：KernelSU 已加载，SELinux 已恢复。请打开 KernelSU 管理器查看。");
+      // 该模块的 su 只在 Permissive 下可用，因此不恢复 Enforcing
+      setState("模块已加载，正在验证 su…");
+      String su = run("ls -l /system/bin/su 2>/dev/null; /system/bin/su -c id 2>&1 | head -1", 20);
+      append(su);
+      if (su.contains("uid=0")) {
+        setState("完成：临时 Root 可用（Permissive）。\nsu -c id = uid=0(root)\n打开 KernelSU 管理器即可使用。");
+      } else {
+        setState("模块已加载，但 su 未就绪。\n保持 Permissive 后再点「检查状态」。\n" + su);
+      }
     } catch (Exception e) {
       setState("加载 KernelSU 失败：" + e.getMessage());
       append(e.toString());
