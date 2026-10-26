@@ -1,7 +1,14 @@
+param(
+  [string]$AndroidSdk = $env:ANDROID_SDK_ROOT,
+  [string]$JavaRoot = $env:JAVA_HOME,
+  [string]$Python = 'python'
+)
 $ErrorActionPreference = 'Stop'
-$root = 'C:\shizuku-root'
-$sdk  = 'C:\gsrbuild\sdk'
-$jdk  = 'C:\gsrbuild\jdk17'
+$root = $PSScriptRoot
+$sdk  = $AndroidSdk
+$jdk  = $JavaRoot
+if (-not $sdk) { throw 'ANDROID_SDK_ROOT is not set (or pass -AndroidSdk)' }
+if (-not $jdk -or !(Test-Path (Join-Path $jdk 'bin\javac.exe'))) { throw 'JDK not found: set JAVA_HOME or pass -JavaRoot (JDK 17 required)' }
 $bt   = Join-Path $sdk 'build-tools\36.0.0'
 $platform = Join-Path $sdk 'platforms\android-35\android.jar'
 $env:JAVA_HOME = $jdk
