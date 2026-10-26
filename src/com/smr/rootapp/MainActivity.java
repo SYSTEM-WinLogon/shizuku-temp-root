@@ -349,8 +349,9 @@ public class MainActivity extends Activity {
             + "cat " + D + "/chain_status 2>/dev/null", 15);
         setState(s.isEmpty() ? "等待设备端输出…" : s);
         if (s.contains("ROOT SHELL CHANNEL UP")) {
-          setState("Root 通道已建立。可以用「执行命令」了。");
           append(s);
+          setState("Root 通道已建立，正在加载 KernelSU…");
+          loadKsu();
           return;
         }
         if (s.contains("流程结束") || s.contains("没有建立 root 通道")) {
@@ -376,6 +377,39 @@ public class MainActivity extends Activity {
       append(s);
     } catch (Exception e) {
       setState("检查失败：" + e.getMessage());
+    }
+  }
+
+  private void loadKsu() {
+    try {
+      setState("正在通过 root 通道加载 KernelSU（ksud insmod）…");
+      String b64 = Base64.encodeToString("sh /data/local/tmp/ksu_fne/ksu_lateload.sh".getBytes("UTF-8"), Base64.NO_WRAP);
+      run("timeout 10 sh -c 'printf %s " + b64 + " | base64 -d > /data/local/tmp/rs.in'", 20);
+      String out = "";
+      for (int i = 0; i < 40 && !dead; i++) {
+        Thread.sleep(2000);
+        out = run("tail -n 30 /data/local/tmp/rs.out 2>/dev/null", 15);
+        if (out.contains("KSUTRY_DONE")) break;
+        String tail = out.length() > 200 ? out.substring(out.length() - 200) : out;
+        setState("等待 KernelSU 加载…\n" + tail);
+      }
+      append(out);
+      if (!out.contains("KSUTRY_DONE")) {
+        setState("KernelSU 加载未确认，请用「执行命令」检查 rs.out。");
+        return;
+      }
+      String mod = run("grep kernelsu /proc/modules 2>/dev/null || echo no-ksu", 15);
+      if (mod.contains("no-ksu")) {
+        setState("ksud 已执行但模块未加载：\n" + mod);
+        return;
+      }
+      append(mod);
+      setState("KernelSU 已加载，正在恢复 SELinux…");
+      runRootCmd("echo 1 > /sys/fs/selinux/enforce; getenforce");
+      setState("完成：KernelSU 已加载，SELinux 已恢复。请打开 KernelSU 管理器查看。");
+    } catch (Exception e) {
+      setState("加载 KernelSU 失败：" + e.getMessage());
+      append(e.toString());
     }
   }
 
