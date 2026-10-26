@@ -402,9 +402,14 @@ public class MainActivity extends Activity {
         return;
       }
       append(mod);
-      // 该模块的 su 只在 Permissive 下可用，因此不恢复 Enforcing
-      setState("模块已加载，正在验证 su…");
-      String su = run("ls -l /system/bin/su 2>/dev/null; /system/bin/su -c id 2>&1 | head -1", 20);
+      // 该模块的 su 只在 Permissive 下可用；late-load 挂载 su 需要几秒，轮询等待
+      setState("模块已加载，等待 su 就绪…");
+      String su = "";
+      for (int i = 0; i < 20 && !dead; i++) {
+        su = run("ls -l /system/bin/su 2>/dev/null; /system/bin/su -c id 2>&1 | head -1", 20);
+        if (su.contains("uid=0")) break;
+        Thread.sleep(2000);
+      }
       append(su);
       if (su.contains("uid=0")) {
         setState("完成：临时 Root 可用（Permissive）。\nsu -c id = uid=0(root)\n打开 KernelSU 管理器即可使用。");
