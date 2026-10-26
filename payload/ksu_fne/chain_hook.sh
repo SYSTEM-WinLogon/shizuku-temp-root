@@ -118,7 +118,8 @@ elif [ "$R" != "$F" ]; then
     echo "--- KernelSU loaded via ksud ---"
     grep kernelsu /proc/modules
     echo ok > $ST
-    echo 1 > /sys/fs/selinux/enforce 2>/dev/null
+    # 保持 Permissive：该定制模块的 su 入口只在 Permissive 下可用，
+    # 不能在这里切回 Enforcing，否则 /system/bin/su 会消失。
     exit 0
   fi
   echo "!! ksud insmod failed - keeping permissive, channel available"
