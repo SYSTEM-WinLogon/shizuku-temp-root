@@ -314,14 +314,15 @@ public class MainActivity extends Activity {
   }
 
   private void deployPayload() throws Exception {
-    String ok = run("test -x " + D + "/e && test -f " + D + "/fne_local.sh && echo ready || echo missing", 10);
-    if (ok.contains("ready")) return;
-    setState("正在释放工具链（约 20 MB）…");
+    // 每次都覆盖释放：避免设备上残留旧版脚本（旧版 chain_hook 会把 SELinux 切回 Enforcing）
+    setState("正在释放/更新工具链（约 20 MB）…");
     try (InputStream in = getAssets().open("payload.bin")) {
       runWithStdin("mkdir -p " + D + " && gzip -dc | tar -x -C /data/local/tmp", in, 300);
     }
-    run("cd " + D + " && chmod 755 e ksud magiskpolicy fne_local.sh chain_hook.sh ksu_lateload.sh restore_enforce.sh 2>/dev/null", 20);
-    String chk = run("test -x " + D + "/e && echo ready", 10);
+    run("cd " + D + " && chmod 755 e ksud magiskpolicy fne_local.sh chain_hook.sh ksu_lateload.sh restore_enforce.sh ghostlock_root.sh 2>/dev/null", 20);
+    // 覆盖设备上可能残留的旧 fneroot hook：旧版检查 /data/adb/ksu/bin/ksud 找不到就放弃加载模块
+    run("cp " + D + "/ghostlock_root.sh /data/local/tmp/.ghostlock_root.sh 2>/dev/null; chmod 755 /data/local/tmp/.ghostlock_root.sh 2>/dev/null", 15);
+    String chk = run("test -x " + D + "/e && test -f " + D + "/chain_hook.sh && echo ready", 10);
     if (!chk.contains("ready")) throw new IOException("工具链释放失败");
   }
 
