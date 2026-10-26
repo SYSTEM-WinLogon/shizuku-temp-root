@@ -117,6 +117,14 @@ elif [ "$R" != "$F" ]; then
   if grep -q kernelsu /proc/modules 2>/dev/null; then
     echo "--- KernelSU loaded via ksud ---"
     grep kernelsu /proc/modules
+    # 只 insmod 不会创建 /system/bin/su；补执行 install + late-load 安装用户态
+    echo "--- install userspace ---"
+    $D/ksud install >> $L 2>&1
+    echo "ksud install rc=$?"
+    $D/ksud late-load --allow-shell --kmi 5.4 >> $L 2>&1
+    echo "late-load rc=$?"
+    sleep 2
+    ls -l /system/bin/su 2>&1
     echo ok > $ST
     # 保持 Permissive：该定制模块的 su 入口只在 Permissive 下可用，
     # 不能在这里切回 Enforcing，否则 /system/bin/su 会消失。
