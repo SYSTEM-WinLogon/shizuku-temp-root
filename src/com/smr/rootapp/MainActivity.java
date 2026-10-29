@@ -329,6 +329,29 @@ public class MainActivity extends Activity {
   private void doRoot() {
     try {
       requirePermission();
+      String kernel = run("uname -r 2>/dev/null", 10).trim();
+      if (!kernel.contains("5.4.289-qgki-gf6cb1f712a6e")) {
+        final String k = kernel;
+        ui.post(() -> {
+          if (dead) return;
+          new AlertDialog.Builder(this)
+              .setTitle("内核不匹配")
+              .setMessage("当前内核：" + k + "\n\n本工具仅适配 5.4.289-qgki-gf6cb1f712a6e。\n系统更新（OTA）更换内核后漏洞会失效，继续可能白跑或崩溃。")
+              .setNegativeButton("取消", null)
+              .setPositiveButton("仍要继续", (d, w) -> execute(this::doRootForce))
+              .show();
+        });
+        return;
+      }
+      doRootForce();
+    } catch (Exception e) {
+      setState("未完成：" + e.getMessage());
+      append(e.toString());
+    }
+  }
+
+  private void doRootForce() {
+    try {
       deployPayload();
       run("mkdir -p /storage/emulated/0/root/_fne", 10);
       setState("正在启动漏洞利用流程…");
